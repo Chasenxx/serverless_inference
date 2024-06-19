@@ -1,0 +1,176 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AWS CloudFormation creates all necessary inference resource",
+  "Parameters": {
+    "ModelAndCodeBucket": {
+      "Description": "Name of the Bucket containing ZIP file",
+      "Type": "String",
+      "Default": "dl-model-bucket-shen",
+      "MinLength": "1",
+      "MaxLength": "80"
+    },
+    "DLBundleObjectKey": {
+      "Description": "The ZIP file-name",
+      "Type": "String",
+      "Default": "resnet50.zip",
+      "MinLength": "1",
+      "MaxLength": "80"
+    },
+    "myFunctionName": {
+      "Description": "My function name",
+      "Type": "String",
+      "Default": "Ort-resnet50",
+      "MinLength": "1",
+      "MaxLength": "80"
+    },
+    "myRoleName": {
+      "Description": "My role name",
+      "Type": "String",
+      "Default": "DLRoleShen",
+      "MinLength": "1",
+      "MaxLength": "80"
+    }
+  },
+  "Resources": {
+    "myDLServerlessLambdaRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": {
+          "Ref": "myRoleName"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "root",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:GetLogEvents",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                },
+                {
+                  "Sid": "Stmt150100867543",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:Get*"
+                  ],
+                  "Resource": {
+                    "Fn::Join": [
+                      "",
+                      [
+                        "arn:aws:s3:::",
+                        {
+                          "Ref": "ModelAndCodeBucket"
+                        },
+                        "/*"
+                      ]
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "myDeepLearningLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Handler": "app.lambda_handler",
+        "FunctionName": {
+          "Ref": "myFunctionName"
+        },
+        "Role": {
+          "Fn::GetAtt": [
+            "myDLServerlessLambdaRole",
+            "Arn"
+          ]
+        },
+        "Layers": [
+          "arn:aws:lambda:ap-southeast-1:507098332628:layer:onnx-imageio:1"
+        ],
+        "Description": "Testing DL inference using DeepLearning model and AWS Lambda",
+        "MemorySize": 2048,
+        "Code": {
+          "S3Bucket": {
+            "Ref": "ModelAndCodeBucket"
+          },
+          "S3Key": {
+            "Ref": "DLBundleObjectKey"
+          }
+        },
+        "Runtime": "python3.7",
+        "Timeout": "300",
+        "Environment": {
+          "Variables": {
+            "model_bucket_name": {
+              "Ref": "ModelAndCodeBucket"
+            },
+            "region": {
+              "Ref": "AWS::Region"
+            },
+            "BS": "5",
+            "delay": "0.1"
+          }
+        }
+      }
+    },
+    "myLambdaURL": {
+      "Type": "AWS::Lambda::Url",
+      "Properties": {
+        "AuthType": "NONE",
+        "TargetFunctionArn": {
+          "Ref": "myDeepLearningLambda"
+        }
+      }
+    },
+    "myLambdaPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunctionUrl",
+        "FunctionName": {
+          "Ref": "myDeepLearningLambda"
+        },
+        "FunctionUrlAuthType": "NONE",
+        "Principal": "*"
+      }
+    }
+  },
+  "Outputs": {
+    "outLambdaRole": {
+      "Value": {
+        "Ref": "myDLServerlessLambdaRole"
+      },
+      "Description": "AWS Role for the lambda functions"
+    },
+    "outDeeplearningLambda": {
+      "Value": {
+        "Ref": "myFunctionName"
+      },
+      "Description": "Function name of deep learning"
+    }
+  }
+}
